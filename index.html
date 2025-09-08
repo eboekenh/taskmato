@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMato 🍅 – Flow & Productivity Timer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .lang-btn.active {
+            background-color: #4f46e5;
+            color: white;
+        }
+        .loader {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #ffffff;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .task-item.completed span.task-text {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="w-full max-w-4xl">
+        <!-- App Title and Description -->
+        <div class="text-center mb-6">
+            <h1 data-lang-key="appTitle" class="text-3xl md:text-4xl font-extrabold text-gray-800">TaskMato 🍅 – Flow & Productivity Timer</h1>
+            <p data-lang-key="appDescription" class="mt-2 text-gray-600">A simple yet powerful tool that combines the Pomodoro Technique with a task breakdown feature. Clearer focus, more productive days.</p>
+        </div>
+
+        <!-- Dil Seçimi -->
+        <div class="language-switcher bg-white p-2 rounded-full shadow-md mb-6 flex space-x-1 max-w-min mx-auto">
+            <button id="lang-tr" class="lang-btn w-12 h-10 rounded-full font-semibold text-gray-700 transition-colors duration-300 hover:bg-indigo-100">TR</button>
+            <button id="lang-en" class="lang-btn active w-12 h-10 rounded-full font-semibold text-gray-700 transition-colors duration-300 hover:bg-indigo-100">EN</button>
+            <button id="lang-de" class="lang-btn w-12 h-10 rounded-full font-semibold text-gray-700 transition-colors duration-300 hover:bg-indigo-100">DE</button>
+        </div>
+
+        <div class="flex flex-col md:flex-row items-start justify-center w-full">
+            <!-- Settings -->
+            <div class="sidebar bg-white p-6 rounded-2xl shadow-lg w-full md:w-1/3 md:mr-6 mb-6 md:mb-0 border-t-8 border-indigo-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 data-lang-key="settingsTitle" class="text-2xl font-bold text-gray-800">Settings</h2>
+                    <button id="export-report-btn" data-lang-key-title="exportReportBtnTooltip" title="Export Daily Report" class="p-2 rounded-full hover:bg-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    </button>
+                </div>
+                <div id="total-sessions-display" class="text-center mb-6 p-3 bg-indigo-50 rounded-lg">
+                    <span data-lang-key="totalSessionsText">Total Pomodoros Completed</span>: 
+                    <span id="total-sessions-count" class="font-bold text-lg text-indigo-600">0</span>
+                </div>
+                <div class="mb-6">
+                    <label for="work-slider" class="block text-sm font-medium text-gray-700">
+                        <span data-lang-key="workLabel">Work Duration</span> (<span id="work-val">25</span> <span data-lang-key="minutesSuffix">min</span>)
+                    </label>
+                    <input type="range" id="work-slider" min="1" max="60" value="25" class="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="mb-4">
+                    <label for="break-slider" class="block text-sm font-medium text-gray-700">
+                        <span data-lang-key="breakLabel">Short Break</span> (<span id="break-val">5</span> <span data-lang-key="minutesSuffix">min</span>)
+                    </label>
+                    <input type="range" id="break-slider" min="1" max="30" value="5" class="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="mb-4">
+                    <label for="long-break-slider" class="block text-sm font-medium text-gray-700">
+                        <span data-lang-key="longBreakLabel">Long Break</span> (<span id="long-break-val">15</span> <span data-lang-key="minutesSuffix">min</span>)
+                    </label>
+                    <input type="range" id="long-break-slider" min="5" max="60" value="15" class="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="mb-4">
+                    <label for="sessions-slider" class="block text-sm font-medium text-gray-700">
+                        <span data-lang-key="sessionsLabel">Sessions before long break</span> (<span id="sessions-val">4</span>)
+                    </label>
+                    <input type="range" id="sessions-slider" min="2" max="10" value="4" class="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+            </div>
+            
+            <!-- Timer -->
+            <div class="main-content bg-white p-8 rounded-2xl shadow-lg w-full md:w-2/3 border-t-8 border-emerald-500">
+                <div class="flex justify-between items-center mb-2">
+                    <h1 data-lang-key="mainTitle" class="text-4xl font-extrabold text-gray-800">Pomodoro Timer</h1>
+                    <button id="audio-toggle-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors">
+                        <svg id="audio-on-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        <svg id="audio-off-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 hidden"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                    </button>
+                </div>
+                <p data-lang-key="tagline" class="text-center text-gray-500 mb-8">Use the Pomodoro Technique to manage your time efficiently and decrease stress!</p>
+                <div class="text-center mb-8">
+                    <h3 class="text-5xl font-mono font-bold text-indigo-600" id="timer-display">25:00</h3>
+                    <div class="mt-4">
+                        <span id="state-display" data-lang-key="timerReady" class="px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700">Ready to Work!</span>
+                    </div>
+                    <div id="session-counter-display" class="mt-2 text-sm text-gray-500"></div>
+                    <div id="message-display" class="mt-4 text-center text-lg font-medium text-green-600"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button id="start-btn" data-lang-key="startBtn" class="py-3 px-6 rounded-full font-bold text-white bg-indigo-500 hover:bg-indigo-600 transition-colors duration-300 shadow-md">Start</button>
+                    <button id="reset-btn" data-lang-key="resetBtn" class="py-3 px-6 rounded-full font-bold text-indigo-500 border border-indigo-500 hover:bg-indigo-50 transition-colors duration-300 shadow-md">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sharing Message -->
+        <div class="sharing-message text-center text-gray-600 my-6 bg-white p-4 rounded-2xl shadow-md">
+            <p data-lang-key="sharingMessage">Sharing is caring. Feel free to share this app with anyone you think might find it useful! 🤗</p>
+        </div>
+
+        <!-- Pomodoro Tips -->
+        <div class="tips-section bg-purple-50 p-6 rounded-2xl shadow-lg w-full border-t-8 border-purple-500">
+            <div class="text-center mb-4">
+                <p data-lang-key="pomodoroIntro1" class="text-gray-600">Sometimes it's hard to focus... Or we find ourselves exhausted at the end of the day without taking any breaks.</p>
+                <p data-lang-key="pomodoroIntro2" class="text-gray-600 mt-2">Thanks to the Pomodoro Technique 🍅, you can increase your productivity and conserve your energy by using short focus intervals and regular breaks.</p>
+            </div>
+            <h3 data-lang-key="tipsTitle" class="text-xl font-bold text-purple-700 text-center mb-4">💡 Usage Tips</h3>
+            <ul class="space-y-2 text-gray-700">
+                <li data-lang-key="tip1">🎯 When it's hard to focus → Focus for 25 min + 5 min break</li>
+                <li data-lang-key="tip2">🚀 When you want to get more done → Focus for 50 min + 10 min break</li>
+                <li data-lang-key="tip3">🔄 After 4 Pomodoros (for 25 min sessions) → 15–20 min long break. The app suggests the session count for other durations in the settings.</li>
+                <li data-lang-key="tip4">📝 Break down big tasks → Small steps make progress easier (use this section of the app)</li>
+                <li data-lang-key="tip5">🌿 No screens during breaks → Walk, stretch, breathe</li>
+                <li data-lang-key="tip6">🌙 End the day with energy → Finish the day with balance, not burnout</li>
+            </ul>
+        </div>
+
+        <!-- To-Do List -->
+        <div class="todo-section bg-white p-6 mt-6 rounded-2xl shadow-lg w-full border-t-8 border-blue-500">
+            <div class="flex justify-between items-center mb-2">
+                 <h2 data-lang-key="todoTitle" class="text-2xl font-bold text-gray-800">To-Do List</h2>
+                 <button id="export-tasks-btn" data-lang-key-title="exportBtnTooltip" title="Export Tasks" class="p-2 rounded-full hover:bg-gray-200 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                 </button>
+            </div>
+            <p data-lang-key="todoDescription" class="text-sm text-gray-500 mb-4">Enter a large task, and the app will break it down into manageable sub-tasks with estimated times for you.</p>
+            <form id="task-form" class="flex gap-2 mb-4">
+                <input type="text" id="task-input" data-lang-key-placeholder="taskPlaceholder" placeholder="Enter a big task and break it down..." class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <button id="breakdown-btn" type="submit" class="py-2 px-4 rounded-lg font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors flex items-center justify-center w-40 disabled:bg-blue-300">
+                    <span class="btn-text" data-lang-key="breakdownBtn">✨ Break Down</span>
+                    <div class="loader hidden"></div>
+                </button>
+            </form>
+            <ul id="task-list" class="space-y-2"></ul>
+        </div>
+    </div>
+    
+    <footer class="text-center text-xs text-gray-500 mt-8">
+        <p data-lang-key="generatedBy">© 2025 Ecem Bökenheide. All rights reserved.</p>
+        <p data-lang-key="copyrightNotice">Copying or reproducing the code or design is prohibited.</p>
+        <p><span data-lang-key="contactMe">For contact:</span> <a href="https://www.linkedin.com/in/ecem-bokenheide/" target="_blank" class="text-indigo-500 hover:underline">LinkedIn</a></p>
+    </footer>
+
+    <script>
+        const translations = {
+            tr: {
+                appTitle: "TaskMato 🍅 – Akış & Üretkenlik Zamanlayıcısı",
+                appDescription: "Pomodoro tekniğini görev bölme özelliğiyle birleştiren basit ama güçlü bir araç. Daha net odak, daha verimli günler.",
+                settingsTitle: "Ayarlar",
+                workLabel: "Çalışma Süresi",
+                breakLabel: "Kısa Mola",
+                longBreakLabel: "Uzun Mola",
+                sessionsLabel: "Uzun molaya kadar seans",
+                minutesSuffix: "dk",
+                mainTitle: "Pomodoro Zamanlayıcı",
+                tagline: "Zamanınızı verimli kullanmak ve stresi azaltmak için Pomodoro tekniğini kullanın!",
+                timerReady: "Çalışmaya Hazır!",
+                startBtn: "Başlat",
+                resetBtn: "Sıfırla",
+                workTimeMsg: "Çalışma Zamanı!",
+                breakTimeMsg: "Kısa Mola!",
+                longBreakTimeMsg: "Uzun Mola!",
+                workDoneMsg: "Çalışma süreniz bitti! Harika iş çıkardınız.",
+                breakDoneMsg: "Mola süreniz bitti! Yeni seansa başlayabilirsiniz.",
+                sessionCounterText: "Seans:",
+                todoTitle: "Yapılacaklar Listesi",
+                todoDescription: "Büyük bir görevi girin, uygulama sizin için yönetilebilir alt görevlere ve tahmini sürelere bölsün.",
+                taskPlaceholder: "Büyük bir görev girin ve parçalara ayırın...",
+                breakdownBtn: "✨ Dökümünü Yap",
+                apiError: "Görev dökümü alınamadı. Lütfen tekrar deneyin.",
+                motivationalTTS: "Say cheerfully: Well done! You've completed a session. Keep up the great work!",
+                estimatedTime: "Tah.",
+                generatedBy: "© 2025 Ecem Bökenheide. Tüm hakları saklıdır.",
+                copyrightNotice: "Kodun veya tasarımın kopyalanması ya da çoğaltılması yasaktır.",
+                contactMe: "İletişim için:",
+                sharingMessage: "Paylaşmak güzeldir. Bu uygulamayı yararlı olacağını düşündüğünüz herkesle paylaşmaktan çekinmeyin! 🤗",
+                totalSessionsText: "Tamamlanan Toplam Pomodoro",
+                exportBtnTooltip: "Görevleri Dışa Aktar",
+                exportReportBtnTooltip: "Günlük Raporu Dışa Aktar",
+                pomodoroIntro1: "Bazen odaklanmak zor geliyor… Ya da gün sonunda hiç mola vermeden kendimizi tüketmiş buluyoruz.",
+                pomodoroIntro2: "Pomodoro tekniği 🍅 sayesinde kısa odaklanma aralıkları ve düzenli molalarla hem verimliliğinizi artırabilir hem de günün sonunda enerjinizi koruyabilirsiniz.",
+                tipsTitle: "💡 Kullanım İpuçları",
+                tip1: "🎯 Zor odaklandığınızda → 25 dk odaklanın + 5 dk mola",
+                tip2: "🚀 Daha çok şey halletmek istediğinizde → 50 dk odaklanın + 10 dk mola",
+                tip3: "🔄 25 dk'lık seanslar için 4 Pomodoro sonrası → 15–20 dk uzun mola. Diğer süreler için önerilen seans sayısını ayarlarda görebilirsiniz.",
+                tip4: "📝 Büyük işleri bölün → Küçük adımlar daha kolay ilerletir (uygulamanın bu bölümünü kullanın)",
+                tip5: "🌿 Molalarda ekran yok → Yürüyün, esneyin, nefes alın",
+                tip6: "🌙 Günü enerjik bitirin → Tükenmişlik yerine dengeyle günü kapatın"
+            },
+            en: {
+                appTitle: "TaskMato 🍅 – Flow & Productivity Timer",
+                appDescription: "A simple yet powerful tool that combines the Pomodoro Technique with a task breakdown feature. Clearer focus, more productive days.",
+                settingsTitle: "Settings",
+                workLabel: "Work Duration",
+                breakLabel: "Short Break",
+                longBreakLabel: "Long Break",
+                sessionsLabel: "Sessions before long break",
+                minutesSuffix: "min",
+                mainTitle: "Pomodoro Timer",
+                tagline: "Use the Pomodoro Technique to manage your time efficiently and decrease stress!",
+                timerReady: "Ready to Work!",
+                startBtn: "Start",
+                resetBtn: "Reset",
+                workTimeMsg: "Time to Work!",
+                breakTimeMsg: "Short Break!",
+                longBreakTimeMsg: "Long Break!",
+                workDoneMsg: "Work session is over! Great job.",
+                breakDoneMsg: "Break is over! You can start a new session.",
+                sessionCounterText: "Session:",
+                todoTitle: "To-Do List",
+                todoDescription: "Enter a large task, and the app will break it down into manageable sub-tasks with estimated times for you.",
+                taskPlaceholder: "Enter a big task and break it down...",
+                breakdownBtn: "✨ Break Down",
+                apiError: "Could not break down the task. Please try again.",
+                motivationalTTS: "Say cheerfully: Well done! You've completed a session. Keep up the great work!",
+                estimatedTime: "Est.",
+                generatedBy: "© 2025 Ecem Bökenheide. All rights reserved.",
+                copyrightNotice: "Copying or reproducing the code or design is prohibited.",
+                contactMe: "For contact:",
+                sharingMessage: "Sharing is caring. Feel free to share this app with anyone you think might find it useful! 🤗",
+                totalSessionsText: "Total Pomodoros Completed",
+                exportBtnTooltip: "Export Tasks",
+                exportReportBtnTooltip: "Export Daily Report",
+                pomodoroIntro1: "Sometimes it's hard to focus... Or we find ourselves exhausted at the end of the day without taking any breaks.",
+                pomodoroIntro2: "Thanks to the Pomodoro Technique 🍅, you can increase your productivity and conserve your energy by using short focus intervals and regular breaks.",
+                tipsTitle: "💡 Usage Tips",
+                tip1: "🎯 When it's hard to focus → Focus for 25 min + 5 min break",
+                tip2: "🚀 When you want to get more done → Focus for 50 min + 10 min break",
+                tip3: "🔄 After 4 Pomodoros (for 25 min sessions) → 15–20 min long break. The app suggests the session count for other durations in the settings.",
+                tip4: "📝 Break down big tasks → Small steps make progress easier (use this section of the app)",
+                tip5: "🌿 No screens during breaks → Walk, stretch, breathe",
+                tip6: "🌙 End the day with energy → Finish the day with balance, not burnout"
+            },
+            de: {
+                appTitle: "TaskMato 🍅 – Flow & Produktivitäts-Timer",
+                appDescription: "Ein einfaches, aber leistungsstarkes Werkzeug, das die Pomodoro-Technik mit einer Funktion zur Aufgabenaufteilung kombiniert. Klarerer Fokus, produktivere Tage.",
+                settingsTitle: "Einstellungen",
+                workLabel: "Arbeitsdauer",
+                breakLabel: "Kurze Pause",
+                longBreakLabel: "Lange Pause",
+                sessionsLabel: "Sitzungen vor langer Pause",
+                minutesSuffix: "min",
+                mainTitle: "Pomodoro-Timer",
+                tagline: "Nutzen Sie die Pomodoro-Technik für ein effizientes Zeitmanagement und um Stress abzubauen!",
+                timerReady: "Bereit zu Arbeiten!",
+                startBtn: "Start",
+                resetBtn: "Zurücksetzen",
+                workTimeMsg: "Arbeitszeit!",
+                breakTimeMsg: "Kurze Pause!",
+                longBreakTimeMsg: "Lange Pause!",
+                workDoneMsg: "Die Arbeitssitzung ist beendet! Gut gemacht.",
+                breakDoneMsg: "Die Pause ist vorbei! Sie können eine neue Sitzung starten.",
+                sessionCounterText: "Sitzung:",
+                todoTitle: "To-Do-Liste",
+                todoDescription: "Geben Sie eine große Aufgabe ein, und die App wird sie für Sie in überschaubare Teilaufgaben mit geschätzten Zeiten aufteilen.",
+                taskPlaceholder: "Geben Sie eine große Aufgabe ein und teilen Sie sie auf...",
+                breakdownBtn: "✨ Aufteilen",
+                apiError: "Die Aufgabe konnte nicht aufgeteilt werden. Bitte versuchen Sie es erneut.",
+                motivationalTTS: "Sagen Sie fröhlich: Gut gemacht! Sie haben eine Sitzung abgeschlossen. Machen Sie weiter so!",
+                estimatedTime: "ca.",
+                generatedBy: "© 2025 Ecem Bökenheide. Alle Rechte vorbehalten.",
+                copyrightNotice: "Das Kopieren oder Vervielfältigen des Codes oder Designs ist verboten.",
+                contactMe: "Für Kontakt:",
+                sharingMessage: "Teilen macht Freude. Fühlen Sie sich frei, diese App mit jedem zu teilen, für den sie nützlich sein könnte! 🤗",
+                totalSessionsText: "Insgesamt abgeschlossene Pomodoros",
+                exportBtnTooltip: "Aufgaben exportieren",
+                exportReportBtnTooltip: "Tagesbericht exportieren",
+                pomodoroIntro1: "Manchmal fällt es schwer, sich zu konzentrieren... Oder wir sind am Ende des Tages erschöpft, ohne Pausen gemacht zu haben.",
+                pomodoroIntro2: "Dank der Pomodoro-Technik 🍅 können Sie durch kurze Konzentrationsintervalle und regelmäßige Pausen sowohl Ihre Produktivität steigern als auch Ihre Energie für den restlichen Tag bewahren.",
+                tipsTitle: "💡 Anwendungstipps",
+                tip1: "🎯 Wenn die Konzentration schwerfällt → 25 Min. konzentrieren + 5 Min. Pause",
+                tip2: "🚀 Wenn Sie mehr erledigen wollen → 50 Min. konzentrieren + 10 Min. Pause",
+                tip3: "🔄 Nach 4 Pomodoros (für 25-Minuten-Sitzungen) → 15–20 Min. lange Pause. Die App schlägt die Sitzungsanzahl für andere Dauern in den Einstellungen vor.",
+                tip4: "📝 Große Aufgaben aufteilen → Kleine Schritte erleichtern den Fortschritt (nutzen Sie diesen Bereich der App)",
+                tip5: "🌿 Keine Bildschirme in den Pausen → Spazieren gehen, dehnen, atmen",
+                tip6: "🌙 Beenden Sie den Tag voller Energie → Schließen Sie den Tag ausgeglichen statt ausgebrannt ab"
+            }
+        };
+
+        let currentLanguage = 'en';
+        let isAudioEnabled = true;
+
+        // DOM Elements
+        const workSlider = document.getElementById('work-slider');
+        const breakSlider = document.getElementById('break-slider');
+        const longBreakSlider = document.getElementById('long-break-slider');
+        const sessionsSlider = document.getElementById('sessions-slider');
+        const workValSpan = document.getElementById('work-val');
+        const breakValSpan = document.getElementById('break-val');
+        const longBreakValSpan = document.getElementById('long-break-val');
+        const sessionsValSpan = document.getElementById('sessions-val');
+        const timerDisplay = document.getElementById('timer-display');
+        const stateDisplay = document.getElementById('state-display');
+        const messageDisplay = document.getElementById('message-display');
+        const sessionCounterDisplay = document.getElementById('session-counter-display');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const langButtons = document.querySelectorAll('.lang-btn');
+        const taskForm = document.getElementById('task-form');
+        const taskInput = document.getElementById('task-input');
+        const taskList = document.getElementById('task-list');
+        const breakdownBtn = document.getElementById('breakdown-btn');
+        const audioToggleBtn = document.getElementById('audio-toggle-btn');
+        const audioOnIcon = document.getElementById('audio-on-icon');
+        const audioOffIcon = document.getElementById('audio-off-icon');
+        const totalSessionsCount = document.getElementById('total-sessions-count');
+        const exportTasksBtn = document.getElementById('export-tasks-btn');
+        const exportReportBtn = document.getElementById('export-report-btn');
+
+        // Timer State & Data
+        let workMinutes = 25;
+        let breakMinutes = 5;
+        let longBreakMinutes = 15;
+        let sessionsBeforeLongBreak = 4;
+        let sessionCount = 0;
+        let totalCompletedSessions = 0;
+        let currentTime = workMinutes * 60;
+        let isRunning = false;
+        let timerId;
+        let state = 'work';
+        let brokenDownTasks = [];
+
+        // --- Gemini API ---
+        const apiKey = "AIzaSyDg9FJBamcSHTNs_hIEmJPWfKa_-elY1iw"; 
+        const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+        let audioContext;
+        
+        async function callGeminiForBreakdown(taskText) {
+            const systemPrompt = `You are a productivity assistant. Break down the user's task into a JSON array of objects. Each object should represent a small, actionable sub-task and have two keys: "task" (a string describing the sub-task) and "minutes" (an integer estimating how many minutes it will take, it should be less than or equal to the Pomodoro session length of ${workMinutes} minutes). If the task is already small enough, return it as a single object in the array. The response must be a valid JSON array of objects.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: taskText }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                           type: "OBJECT",
+                           properties: {
+                               "task": {"type": "STRING"},
+                               "minutes": {"type": "NUMBER"}
+                           },
+                           required: ["task", "minutes"]
+                        }
+                    }
+                }
+            };
+            
+            const response = await fetch(textApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API call failed with status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (jsonText) {
+                return JSON.parse(jsonText);
+            } else {
+                throw new Error("Invalid response structure from API.");
+            }
+        }
+
+        async function getMotivationalAudio() {
+            if (!isAudioEnabled) return;
+
+            const payload = {
+                contents: [{ parts: [{ text: translations[currentLanguage].motivationalTTS }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            try {
+                const response = await fetch(ttsApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                if (audioData) {
+                    playPcmAudio(audioData);
+                }
+            } catch (error) {
+                console.error("Error fetching TTS audio:", error);
+            }
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        async function playPcmAudio(base64Data) {
+            if (!audioContext) {
+                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const pcmData = base64ToArrayBuffer(base64Data);
+            const pcm16 = new Int16Array(pcmData);
+            const sampleRate = 24000;
+            const audioBuffer = audioContext.createBuffer(1, pcm16.length, sampleRate);
+            const channelData = audioBuffer.getChannelData(0);
+            
+            for (let i = 0; i < pcm16.length; i++) {
+                channelData[i] = pcm16[i] / 32768.0; // Convert to float
+            }
+
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start();
+        }
+
+        // --- UI & Logic ---
+
+        function setLanguage(lang) {
+            currentLanguage = lang;
+            document.documentElement.lang = lang;
+            
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.dataset.langKey;
+                if(translations[lang][key]) {
+                   el.textContent = translations[lang][key];
+                }
+            });
+
+             document.querySelectorAll('[data-lang-key-placeholder]').forEach(el => {
+                const key = el.dataset.langKeyPlaceholder;
+                 if(translations[lang][key]) {
+                    el.placeholder = translations[lang][key];
+                 }
+            });
+
+            document.querySelectorAll('[data-lang-key-title]').forEach(el => {
+                const key = el.dataset.langKeyTitle;
+                 if(translations[lang][key]) {
+                    el.title = translations[lang][key];
+                 }
+            });
+
+            langButtons.forEach(btn => btn.classList.toggle('active', btn.id === `lang-${lang}`));
+            if (!isRunning) resetTimer();
+        }
+
+        function updateSessionCounterDisplay() {
+            sessionCounterDisplay.textContent = sessionCount > 0 ? `${translations[currentLanguage].sessionCounterText} ${sessionCount} / ${sessionsBeforeLongBreak}` : '';
+        }
+
+        function updateTotalSessionsDisplay() {
+            totalSessionsCount.textContent = totalCompletedSessions;
+        }
+        
+        function suggestSettings(duration) {
+            let newBreak, newLongBreak, newSessions;
+            if (duration <= 30) {
+                newBreak = 5; newLongBreak = 15; newSessions = 4;
+            } else if (duration <= 50) {
+                newBreak = 10; newLongBreak = 20; newSessions = 3;
+            } else {
+                newBreak = 15; newLongBreak = 30; newSessions = 2;
+            }
+            breakMinutes = newBreak; breakSlider.value = newBreak; breakValSpan.textContent = newBreak;
+            longBreakMinutes = newLongBreak; longBreakSlider.value = newLongBreak; longBreakValSpan.textContent = newLongBreak;
+            sessionsBeforeLongBreak = newSessions; sessionsSlider.value = newSessions; sessionsValSpan.textContent = newSessions;
+        }
+
+        taskForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const taskText = taskInput.value.trim();
+            if (!taskText) return;
+
+            brokenDownTasks.push(taskText);
+
+            breakdownBtn.disabled = true;
+            breakdownBtn.querySelector('.btn-text').classList.add('hidden');
+            breakdownBtn.querySelector('.loader').classList.remove('hidden');
+
+            try {
+                const subtasks = await callGeminiForBreakdown(taskText);
+                taskList.innerHTML = '';
+                subtasks.forEach(addTask);
+                taskInput.value = '';
+            } catch (error) {
+                console.error("Breakdown failed:", error);
+                alert(translations[currentLanguage].apiError);
+            } finally {
+                breakdownBtn.disabled = false;
+                breakdownBtn.querySelector('.btn-text').classList.remove('hidden');
+                breakdownBtn.querySelector('.loader').classList.add('hidden');
+            }
+        });
+
+        function addTask(taskObject) {
+            const li = document.createElement('li');
+            li.className = 'task-item flex items-center p-3 bg-gray-50 rounded-lg transition-colors hover:bg-gray-100';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-3 flex-shrink-0';
+            checkbox.addEventListener('change', () => li.classList.toggle('completed', checkbox.checked));
+
+            const span = document.createElement('span');
+            span.textContent = taskObject.task;
+            span.className = "task-text flex-grow";
+
+            const timeEl = document.createElement('div');
+            timeEl.className = "ml-auto pl-3 text-sm text-gray-500 font-medium whitespace-nowrap";
+            timeEl.innerHTML = `<span data-lang-key="estimatedTime">${translations[currentLanguage].estimatedTime}</span> ${taskObject.minutes} <span data-lang-key="minutesSuffix">${translations[currentLanguage].minutesSuffix}</span>`;
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-btn ml-2 p-1 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0';
+            editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 pointer-events-none"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+
+            li.appendChild(checkbox);
+            li.appendChild(span);
+            li.appendChild(timeEl);
+            li.appendChild(editBtn);
+            taskList.appendChild(li);
+        }
+        
+        function toggleTaskEdit(li, isEditing) {
+            const span = li.querySelector('.task-text');
+            const editBtn = li.querySelector('.edit-btn') || li.querySelector('.save-btn');
+
+            if (isEditing) {
+                const currentText = span.textContent;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentText;
+                input.className = 'task-edit-input flex-grow mx-2 p-1 border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500';
+                
+                li.replaceChild(input, span);
+                input.focus();
+                
+                editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="text-green-500 pointer-events-none"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                editBtn.classList.remove('edit-btn');
+                editBtn.classList.add('save-btn');
+
+                const saveAction = () => {
+                    const currentlyEditing = li.querySelector('.task-edit-input');
+                    if(currentlyEditing) { // Prevent double-firing
+                        toggleTaskEdit(li, false);
+                    }
+                };
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        saveAction();
+                    }
+                });
+                input.addEventListener('blur', () => setTimeout(saveAction, 150)); // Delay to allow save button click
+            } else { // Saving
+                const input = li.querySelector('.task-edit-input');
+                if (!input) return;
+
+                const newText = input.value.trim();
+                const newSpan = document.createElement('span');
+                newSpan.textContent = newText || span.textContent;
+                newSpan.className = 'task-text flex-grow';
+
+                li.replaceChild(newSpan, input);
+
+                editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 pointer-events-none"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+                editBtn.classList.remove('save-btn');
+                editBtn.classList.add('edit-btn');
+            }
+        }
+
+        taskList.addEventListener('click', (e) => {
+            const button = e.target.closest('button');
+            if (button && (button.classList.contains('edit-btn') || button.classList.contains('save-btn'))) {
+                const li = button.closest('.task-item');
+                const isEditing = button.classList.contains('edit-btn');
+                toggleTaskEdit(li, isEditing);
+            }
+        });
+
+        function updateDisplay() {
+            const minutes = Math.floor(currentTime / 60);
+            const seconds = currentTime % 60;
+            timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        
+        audioToggleBtn.addEventListener('click', () => {
+            isAudioEnabled = !isAudioEnabled;
+            audioOnIcon.classList.toggle('hidden', !isAudioEnabled);
+            audioOffIcon.classList.toggle('hidden', isAudioEnabled);
+        });
+        
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            messageDisplay.textContent = '';
+            
+            if (state === 'work') {
+                stateDisplay.textContent = translations[currentLanguage].workTimeMsg;
+                stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
+            }
+            
+            timerId = setInterval(() => {
+                if (currentTime > 0) {
+                    currentTime--;
+                    updateDisplay();
+                } else {
+                    clearInterval(timerId);
+                    isRunning = false;
+                    
+                    if (state === 'work') {
+                        sessionCount++;
+                        totalCompletedSessions++;
+                        updateTotalSessionsDisplay();
+                        getMotivationalAudio();
+                        updateSessionCounterDisplay();
+                        messageDisplay.textContent = translations[currentLanguage].workDoneMsg;
+                        
+                        if (sessionCount > 0 && sessionCount % sessionsBeforeLongBreak === 0) {
+                            state = 'long-break';
+                            currentTime = longBreakMinutes * 60;
+                            stateDisplay.textContent = translations[currentLanguage].longBreakTimeMsg;
+                            stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-700';
+                        } else {
+                            state = 'break';
+                            currentTime = breakMinutes * 60;
+                            stateDisplay.textContent = translations[currentLanguage].breakTimeMsg;
+                            stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-sky-100 text-sky-700';
+                        }
+                    } else { 
+                        messageDisplay.textContent = translations[currentLanguage].breakDoneMsg;
+                        state = 'work';
+                        currentTime = workMinutes * 60;
+                        stateDisplay.textContent = translations[currentLanguage].timerReady;
+                        stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
+                        if (state === 'long-break') sessionCount = 0;
+                        updateSessionCounterDisplay();
+                    }
+                    updateDisplay();
+                }
+            }, 1000);
+        }
+
+        function resetTimer() {
+            clearInterval(timerId);
+            isRunning = false;
+            state = 'work';
+            sessionCount = 0;
+            currentTime = workMinutes * 60;
+            updateDisplay();
+            updateSessionCounterDisplay();
+            stateDisplay.textContent = translations[currentLanguage].timerReady;
+            stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
+            messageDisplay.textContent = '';
+        }
+
+        function exportTasks() {
+            const tasks = [];
+            document.querySelectorAll('#task-list .task-item').forEach(item => {
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                const text = item.querySelector('.task-text').textContent;
+                const time = item.querySelector('div').textContent.trim();
+                const status = checkbox.checked ? '[x]' : '[ ]';
+                tasks.push(`${status} ${text} (${time})`);
+            });
+
+            if (tasks.length === 0) {
+                alert("Nothing to export!");
+                return;
+            }
+
+            const content = tasks.join('\n');
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'tasks.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportDailyReport() {
+            const today = new Date().toISOString().slice(0, 10);
+            let reportContent = `TaskMato Daily Report - ${today}\n`;
+            reportContent += '=====================================\n\n';
+
+            reportContent += `TOTAL POMODOROS COMPLETED: ${totalCompletedSessions}\n\n`;
+
+            reportContent += 'BROKEN DOWN TASKS:\n';
+            if (brokenDownTasks.length > 0) {
+                brokenDownTasks.forEach(task => reportContent += `- ${task}\n`);
+            } else {
+                reportContent += 'No tasks were broken down today.\n';
+            }
+            reportContent += '\n';
+
+            reportContent += 'COMPLETED SUB-TASKS:\n';
+            const completedTasks = [];
+            document.querySelectorAll('#task-list .task-item.completed').forEach(item => {
+                const text = item.querySelector('.task-text').textContent;
+                completedTasks.push(text);
+            });
+            if (completedTasks.length > 0) {
+                completedTasks.forEach(task => reportContent += `- ${task}\n`);
+            } else {
+                reportContent += 'No sub-tasks were completed today.\n';
+            }
+
+            const blob = new Blob([reportContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `TaskMato_Report_${today}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Event Listeners
+        langButtons.forEach(button => button.addEventListener('click', () => setLanguage(button.id.split('-')[1])));
+        workSlider.addEventListener('input', () => { 
+            workMinutes = parseInt(workSlider.value); 
+            workValSpan.textContent = workMinutes; 
+            suggestSettings(workMinutes);
+            if (!isRunning && state === 'work') { 
+                currentTime = workMinutes * 60; 
+                updateDisplay(); 
+            } 
+        });
+        breakSlider.addEventListener('input', () => { breakMinutes = parseInt(breakSlider.value); breakValSpan.textContent = breakMinutes; });
+        longBreakSlider.addEventListener('input', () => { longBreakMinutes = parseInt(longBreakSlider.value); longBreakValSpan.textContent = longBreakMinutes; });
+        sessionsSlider.addEventListener('input', () => { sessionsBeforeLongBreak = parseInt(sessionsSlider.value); sessionsValSpan.textContent = sessionsBeforeLongBreak; updateSessionCounterDisplay(); });
+        startBtn.addEventListener('click', startTimer);
+        resetBtn.addEventListener('click', resetTimer);
+        exportTasksBtn.addEventListener('click', exportTasks);
+        exportReportBtn.addEventListener('click', exportDailyReport);
+
+        // Initial setup
+        setLanguage('en');
+    </script>
+</body>
+</html>
+
