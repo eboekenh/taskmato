@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+<!-- This site is hosted on Netlify. Anyone can build and deploy a site
+     like this one for free: https://netlify.new/?utm_campaign=ai-legible&utm_source=comment&utm_medium=referral&utm_id=b75fc838-82f6-49ce-83cd-5390084178b5
+     Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->
+<meta name="hosting-provider" content="Netlify">
+<meta name="netlify-deploy" content="https://netlify.new/?utm_campaign=ai-legible&amp;utm_source=meta&amp;utm_medium=referral&amp;utm_id=b75fc838-82f6-49ce-83cd-5390084178b5">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TaskMato 🍅 – Flow & Productivity Timer</title>
     <!-- Tailwind CSS CDN -->
@@ -358,38 +363,107 @@
         let state = 'work';
         let brokenDownTasks = [];
 
-        // --- Gemini API ---
-        const apiKey = "AIzaSyCiJWFYprsUl0JgkS3FlecZz48bXiyeEcQ"; 
-        const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-        let audioContext;
-        
-        async function callGeminiForBreakdown(taskText) {
-            const systemPrompt = `You are a productivity assistant. Break down the user's task into a JSON array of objects. Each object should represent a small, actionable sub-task and have two keys: "task" (a string describing the sub-task) and "minutes" (an integer estimating how many minutes it will take, it should be less than or equal to the Pomodoro session length of ${workMinutes} minutes). If the task is already small enough, return it as a single object in the array. The response must be a valid JSON array of objects.`;
+        // --- Background-safe timer additions ---
+        // The timer used to just decrement a counter every second, which stops
+        // dead the moment the app is backgrounded (webviews pause JS execution).
+        // Instead we store the real end timestamp, recompute the remaining time
+        // from Date.now() whenever we get a chance to run, and additionally ask
+        // OneSignal (via Median) to push a native notification for the moment
+        // the session ends, so the user is told even if the app never gets to
+        // run its JS again before then.
+        let endTime = null; // ms epoch timestamp when the current phase should end
+        let scheduledNotificationId = null; // OneSignal notification id, so Reset can cancel it
+        let oneSignalSubscriptionId = null; // this device's OneSignal subscription id
 
-            const payload = {
-                contents: [{ parts: [{ text: taskText }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "ARRAY",
-                        items: {
-                           type: "OBJECT",
-                           properties: {
-                               "task": {"type": "STRING"},
-                               "minutes": {"type": "NUMBER"}
-                           },
-                           required: ["task", "minutes"]
-                        }
-                    }
+        const TIMER_STORAGE_KEY = 'taskmato_timer_state_v1';
+
+        function saveTimerState() {
+            try {
+                localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({
+                    state, sessionCount, totalCompletedSessions,
+                    workMinutes, breakMinutes, longBreakMinutes, sessionsBeforeLongBreak,
+                    isRunning, endTime, scheduledNotificationId
+                }));
+            } catch (e) { /* localStorage unavailable (private mode etc.) - not fatal */ }
+        }
+
+        function clearTimerState() {
+            try { localStorage.removeItem(TIMER_STORAGE_KEY); } catch (e) {}
+        }
+
+        // --- Median / OneSignal bridge ---
+        // Only present when the site is running inside the Median-built native
+        // app (co.median.ios.jbjrqqa / the Android equivalent), not on the
+        // plain website - so all of this quietly does nothing in a browser tab.
+        function inMedianApp() {
+            return typeof window.median !== 'undefined';
+        }
+
+        async function ensureOneSignalSubscriptionId() {
+            if (!inMedianApp()) return null;
+            if (oneSignalSubscriptionId) return oneSignalSubscriptionId;
+            try {
+                const data = await median.onesignal.onesignalInfo();
+                oneSignalSubscriptionId = data?.subscription?.id || null;
+            } catch (e) {
+                console.warn('OneSignal info not available yet:', e);
+            }
+            return oneSignalSubscriptionId;
+        }
+
+        async function scheduleSessionEndNotification(seconds, title, message) {
+            scheduledNotificationId = null;
+            const subscriptionId = await ensureOneSignalSubscriptionId();
+            if (!subscriptionId) return; // not in the app yet, or push not granted - skip silently
+
+            try {
+                const response = await fetch('/.netlify/functions/schedule-notification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subscriptionId, seconds, title, message })
+                });
+                const result = await response.json();
+                if (result && result.id) {
+                    scheduledNotificationId = result.id;
+                    saveTimerState();
                 }
-            };
-            
-            const response = await fetch(textApiUrl, {
+            } catch (e) {
+                console.warn('Could not schedule background notification:', e);
+            }
+        }
+
+        async function cancelScheduledNotification() {
+            if (!scheduledNotificationId) return;
+            const idToCancel = scheduledNotificationId;
+            scheduledNotificationId = null;
+            try {
+                await fetch('/.netlify/functions/cancel-notification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notificationId: idToCancel })
+                });
+            } catch (e) {
+                console.warn('Could not cancel background notification:', e);
+            }
+        }
+
+        // The Median bridge may already be present, or may announce itself
+        // slightly after this script runs - handle both orderings.
+        function median_library_ready() { ensureOneSignalSubscriptionId(); }
+        if (inMedianApp()) { ensureOneSignalSubscriptionId(); }
+
+        // --- Gemini API ---
+        // The API key used to sit here in plain text, visible to anyone who
+        // viewed the page source. Both calls now go through Netlify Functions
+        // instead, which hold the real key server-side (see
+        // netlify/functions/gemini-breakdown.js and gemini-tts.js).
+        let audioContext;
+
+        async function callGeminiForBreakdown(taskText) {
+            const response = await fetch('/.netlify/functions/gemini-breakdown', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ taskText, workMinutes })
             });
 
             if (!response.ok) {
@@ -397,9 +471,8 @@
             }
 
             const result = await response.json();
-            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (jsonText) {
-                return JSON.parse(jsonText);
+            if (result && result.subtasks) {
+                return result.subtasks;
             } else {
                 throw new Error("Invalid response structure from API.");
             }
@@ -408,31 +481,21 @@
         async function getMotivationalAudio() {
             if (!isAudioEnabled) return;
 
-            const payload = {
-                contents: [{ parts: [{ text: translations[currentLanguage].motivationalTTS }] }],
-                generationConfig: {
-                    responseModalities: ["AUDIO"],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
-                },
-                model: "gemini-2.5-flash-preview-tts"
-            };
-
             try {
-                const response = await fetch(ttsApiUrl, {
+                const response = await fetch('/.netlify/functions/gemini-tts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ text: translations[currentLanguage].motivationalTTS })
                 });
                 const result = await response.json();
-                const audioData = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                if (audioData) {
-                    playPcmAudio(audioData);
+                if (result && result.audioData) {
+                    playPcmAudio(result.audioData);
                 }
             } catch (error) {
                 console.error("Error fetching TTS audio:", error);
             }
         }
-        
+
         function base64ToArrayBuffer(base64) {
             const binaryString = window.atob(base64);
             const len = binaryString.length;
@@ -465,7 +528,7 @@
 
         // --- UI & Logic ---
 
-        function setLanguage(lang) {
+        function setLanguage(lang, isInitialLoad) {
             currentLanguage = lang;
             document.documentElement.lang = lang;
             
@@ -491,7 +554,9 @@
             });
 
             langButtons.forEach(btn => btn.classList.toggle('active', btn.id === `lang-${lang}`));
-            if (!isRunning) resetTimer();
+            // Skip the reset on the very first, init-time call - it would wipe
+            // out a timer/session state we're about to restore from storage.
+            if (!isInitialLoad && !isRunning) resetTimer();
         }
 
         function updateSessionCounterDisplay() {
@@ -643,68 +708,187 @@
             audioOffIcon.classList.toggle('hidden', isAudioEnabled);
         });
         
-        function startTimer() {
-            if (isRunning) return;
-            isRunning = true;
-            messageDisplay.textContent = '';
-            
+        function setStateBadge() {
             if (state === 'work') {
                 stateDisplay.textContent = translations[currentLanguage].workTimeMsg;
                 stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
+            } else if (state === 'long-break') {
+                stateDisplay.textContent = translations[currentLanguage].longBreakTimeMsg;
+                stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-700';
+            } else {
+                stateDisplay.textContent = translations[currentLanguage].breakTimeMsg;
+                stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-sky-100 text-sky-700';
             }
-            
-            timerId = setInterval(() => {
-                if (currentTime > 0) {
-                    currentTime--;
-                    updateDisplay();
-                } else {
-                    clearInterval(timerId);
-                    isRunning = false;
-                    
-                    if (state === 'work') {
-                        sessionCount++;
-                        totalCompletedSessions++;
-                        updateTotalSessionsDisplay();
-                        getMotivationalAudio();
-                        updateSessionCounterDisplay();
-                        messageDisplay.textContent = translations[currentLanguage].workDoneMsg;
-                        
-                        if (sessionCount > 0 && sessionCount % sessionsBeforeLongBreak === 0) {
-                            state = 'long-break';
-                            currentTime = longBreakMinutes * 60;
-                            stateDisplay.textContent = translations[currentLanguage].longBreakTimeMsg;
-                            stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-700';
-                        } else {
-                            state = 'break';
-                            currentTime = breakMinutes * 60;
-                            stateDisplay.textContent = translations[currentLanguage].breakTimeMsg;
-                            stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-sky-100 text-sky-700';
-                        }
-                    } else { 
-                        messageDisplay.textContent = translations[currentLanguage].breakDoneMsg;
-                        state = 'work';
-                        currentTime = workMinutes * 60;
-                        stateDisplay.textContent = translations[currentLanguage].timerReady;
-                        stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
-                        if (state === 'long-break') sessionCount = 0;
-                        updateSessionCounterDisplay();
-                    }
-                    updateDisplay();
-                }
-            }, 1000);
         }
 
-        function resetTimer() {
-            clearInterval(timerId);
-            isRunning = false;
+        function applyIdleDisplay() {
             state = 'work';
-            sessionCount = 0;
             currentTime = workMinutes * 60;
             updateDisplay();
             updateSessionCounterDisplay();
             stateDisplay.textContent = translations[currentLanguage].timerReady;
             stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
             messageDisplay.textContent = '';
+        }
+
+        // Recomputes currentTime from the stored end-timestamp rather than just
+        // decrementing a counter, so a pause in JS execution (tab hidden, app
+        // backgrounded) can never desync the displayed time - once we run again,
+        // it immediately shows the correct remaining time.
+        function runTicker() {
+            clearInterval(timerId);
+            timerId = setInterval(() => {
+                if (!endTime) return;
+                const remaining = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+                if (remaining !== currentTime) {
+                    currentTime = remaining;
+                    updateDisplay();
+                }
+                if (remaining <= 0) {
+                    completeCurrentPhase();
+                }
+            }, 250);
+        }
+
+        function completeCurrentPhase() {
+            clearInterval(timerId);
+            isRunning = false;
+            currentTime = 0;
+            endTime = null;
+            scheduledNotificationId = null;
+
+            if (state === 'work') {
+                sessionCount++;
+                totalCompletedSessions++;
+                updateTotalSessionsDisplay();
+                getMotivationalAudio();
+                updateSessionCounterDisplay();
+                messageDisplay.textContent = translations[currentLanguage].workDoneMsg;
+
+                if (sessionCount > 0 && sessionCount % sessionsBeforeLongBreak === 0) {
+                    state = 'long-break';
+                    currentTime = longBreakMinutes * 60;
+                    stateDisplay.textContent = translations[currentLanguage].longBreakTimeMsg;
+                    stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-700';
+                } else {
+                    state = 'break';
+                    currentTime = breakMinutes * 60;
+                    stateDisplay.textContent = translations[currentLanguage].breakTimeMsg;
+                    stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-sky-100 text-sky-700';
+                }
+            } else {
+                messageDisplay.textContent = translations[currentLanguage].breakDoneMsg;
+                const wasLongBreak = state === 'long-break'; // must check before we overwrite state below
+                state = 'work';
+                currentTime = workMinutes * 60;
+                stateDisplay.textContent = translations[currentLanguage].timerReady;
+                stateDisplay.className = 'px-3 py-1 text-sm font-semibold rounded-full bg-emerald-100 text-emerald-700';
+                if (wasLongBreak) sessionCount = 0;
+                updateSessionCounterDisplay();
+            }
+
+            updateDisplay();
+            saveTimerState();
+        }
+
+        function startTimer() {
+            if (isRunning) return;
+            isRunning = true;
+            messageDisplay.textContent = '';
+            setStateBadge();
+
+            endTime = Date.now() + currentTime * 1000;
+            saveTimerState();
+
+            const notifTitle = 'TaskMato 🍅';
+            const notifBody = state === 'work'
+                ? translations[currentLanguage].workDoneMsg
+                : translations[currentLanguage].breakDoneMsg;
+            scheduleSessionEndNotification(currentTime, notifTitle, notifBody);
+
+            runTicker();
+        }
+
+        function resetTimer() {
+            clearInterval(timerId);
+            isRunning = false;
+            sessionCount = 0;
+            endTime = null;
+            cancelScheduledNotification();
+            clearTimerState();
+            applyIdleDisplay();
+        }
+
+        // Recomputes the countdown the instant the app becomes visible again
+        // (tab/app switch without a full reload) instead of waiting for the
+        // next 250ms tick, so the number on screen never looks stuck.
+        function syncTimerToNow() {
+            if (isRunning && endTime) {
+                const remaining = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+                if (remaining !== currentTime) {
+                    currentTime = remaining;
+                    updateDisplay();
+                }
+                if (remaining <= 0) {
+                    completeCurrentPhase();
+                }
+            }
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') syncTimerToNow();
+        });
+        window.addEventListener('pageshow', syncTimerToNow);
+        window.addEventListener('focus', syncTimerToNow);
+
+        // Restores timer/session state after a full reload (app relaunch,
+        // Median killing and recreating the webview, etc.). If the current
+        // phase's end time has already passed, jumps straight to the
+        // completion it missed instead of showing a frozen "00:00".
+        function restoreTimerState() {
+            let saved = null;
+            try {
+                saved = JSON.parse(localStorage.getItem(TIMER_STORAGE_KEY) || 'null');
+            } catch (e) { saved = null; }
+
+            if (!saved) {
+                applyIdleDisplay();
+                return;
+            }
+
+            workMinutes = saved.workMinutes ?? workMinutes;
+            breakMinutes = saved.breakMinutes ?? breakMinutes;
+            longBreakMinutes = saved.longBreakMinutes ?? longBreakMinutes;
+            sessionsBeforeLongBreak = saved.sessionsBeforeLongBreak ?? sessionsBeforeLongBreak;
+            sessionCount = saved.sessionCount ?? sessionCount;
+            totalCompletedSessions = saved.totalCompletedSessions ?? totalCompletedSessions;
+            state = saved.state ?? state;
+            scheduledNotificationId = saved.scheduledNotificationId ?? null;
+
+            workSlider.value = workMinutes; workValSpan.textContent = workMinutes;
+            breakSlider.value = breakMinutes; breakValSpan.textContent = breakMinutes;
+            longBreakSlider.value = longBreakMinutes; longBreakValSpan.textContent = longBreakMinutes;
+            sessionsSlider.value = sessionsBeforeLongBreak; sessionsValSpan.textContent = sessionsBeforeLongBreak;
+            updateTotalSessionsDisplay();
+            updateSessionCounterDisplay();
+
+            if (saved.isRunning && saved.endTime) {
+                endTime = saved.endTime;
+                const remaining = Math.round((endTime - Date.now()) / 1000);
+                if (remaining > 0) {
+                    isRunning = true;
+                    currentTime = remaining;
+                    setStateBadge();
+                    updateDisplay();
+                    runTicker();
+                } else {
+                    // The phase ended while the app was closed/backgrounded -
+                    // catch up immediately (the OneSignal push already told
+                    // the user, this just settles the on-screen state too).
+                    completeCurrentPhase();
+                }
+            } else {
+                applyIdleDisplay();
+            }
         }
 
         function exportTasks() {
@@ -792,8 +976,8 @@
         exportReportBtn.addEventListener('click', exportDailyReport);
 
         // Initial setup
-        setLanguage('en');
+        setLanguage('en', true);
+        restoreTimerState();
     </script>
 </body>
 </html>
-
