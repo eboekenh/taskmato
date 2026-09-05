@@ -1,0 +1,66 @@
+// Schedules a OneSignal push notification for a future time, so TaskMato
+// users get a "session over" alert even if the app is backgrounded or
+// completely closed. Called by the client right when a Pomodoro/break
+// session starts, with the number of seconds until it should end.
+//
+// Requires two environment variables set in the Netlify dashboard
+// (Site configuration -> Environment variables) - NEVER commit these to
+// the repo:
+//   ONESIGNAL_APP_ID        - OneSignal dashboard > Settings > Keys & IDs
+//   ONESIGNAL_REST_API_KEY  - same page ("REST API Key") - keep secret!
+
+exports.handler = async function (event) {
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    const { ONESIGNAL_APP_ID, ONESIGNAL_REST_API_KEY } = process.env;
+    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY are not configured on the server.' })
+        };
+    }
+
+    let payload;
+    try {
+        payload = JSON.parse(event.body || '{}');
+    } catch (e) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body.' }) };
+    }
+
+    const { subscriptionId, seconds, title, message } = payload;
+    if (!subscriptionId || !seconds || seconds <= 0) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'subscriptionId and a positive seconds value are required.' }) };
+    }
+
+    // Sanity cap at 2 hours - a Pomodoro/break phase should never be longer
+    // than that; this just guards against a stray huge value.
+    const safeSeconds = Math.min(Math.max(Math.round(seconds), 1), 7200);
+    const sendAfter = new Date(Date.now() + safeSeconds * 1000).toISOString();
+
+    try {
+        const response = await fetch('https://api.onesignal.com/notifications', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Key ${ONESIGNAL_REST_API_KEY}`
+            },
+            body: JSON.stringify({
+                app_id: ONESIGNAL_APP_ID,
+                include_subscription_ids: [subscriptionId],
+                headings: { en: title || 'TaskMato 🍅' },
+                contents: { en: message || 'Your session is over!' },
+                send_after: sendAfter
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            return { statusCode: response.status, body: JSON.stringify({ error: result }) };
+        }
+        return { statusCode: 200, body: JSON.stringify({ id: result.id }) };
+    } catch (err) {
+        return { statusCode: 500, body: JSON.stringify({ error: String(err) }) };
+    }
+};
